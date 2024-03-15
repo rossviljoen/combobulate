@@ -793,6 +793,41 @@
 		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/elements.html[@1~after].html")))))
 
 
+(ert-deftest combobulate-test-go-combobulate-drag-up--expr-switch-3 ()
+ "Test `combobulate' with `fixtures/sibling/expr-switch.go' in `go-ts-mode' mode."
+	     (combobulate-test
+		 (:language go :mode go-ts-mode :fixture "fixtures/sibling/expr-switch.go")
+	       :tags
+	       '(combobulate go go-ts-mode combobulate-drag-up)
+	       (combobulate-test-go-to-marker 3)
+	       (combobulate-drag-up)
+	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/expr-switch.go[@3~after].go")))
+
+
+(ert-deftest combobulate-test-go-combobulate-drag-up--expr-switch-2 ()
+ "Test `combobulate' with `fixtures/sibling/expr-switch.go' in `go-ts-mode' mode."
+	     (combobulate-test
+		 (:language go :mode go-ts-mode :fixture "fixtures/sibling/expr-switch.go")
+	       :tags
+	       '(combobulate go go-ts-mode combobulate-drag-up)
+	       (combobulate-test-go-to-marker 2)
+	       (combobulate-drag-up)
+	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/expr-switch.go[@2~after].go")))
+
+
+(ert-deftest combobulate-test-go-combobulate-drag-up--expr-switch-1 ()
+ "Test `combobulate' with `fixtures/sibling/expr-switch.go' in `go-ts-mode' mode."
+	     (combobulate-test
+		 (:language go :mode go-ts-mode :fixture "fixtures/sibling/expr-switch.go")
+	       :tags
+	       '(combobulate go go-ts-mode combobulate-drag-up)
+	       (should-error
+		(progn
+		  (combobulate-test-go-to-marker 1)
+		  (combobulate-drag-up)
+		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/expr-switch.go[@1~after].go")))))
+
+
 (ert-deftest combobulate-test-go-combobulate-drag-up--for-loop-3 ()
  "Test `combobulate' with `fixtures/sibling/for-loop.go' in `go-ts-mode' mode."
 	     (combobulate-test
@@ -1531,11 +1566,9 @@
 		 (:language python :mode python-ts-mode :fixture "fixtures/sibling/python-string.py")
 	       :tags
 	       '(combobulate python python-ts-mode combobulate-drag-up)
-	       (should-error
-		(progn
-		  (combobulate-test-go-to-marker 6)
-		  (combobulate-drag-up)
-		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@6~after].py")))))
+	       (combobulate-test-go-to-marker 6)
+	       (combobulate-drag-up)
+	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@6~after].py")))
 
 
 (ert-deftest combobulate-test-python-combobulate-drag-up--python-string-5 ()
@@ -1544,11 +1577,9 @@
 		 (:language python :mode python-ts-mode :fixture "fixtures/sibling/python-string.py")
 	       :tags
 	       '(combobulate python python-ts-mode combobulate-drag-up)
-	       (should-error
-		(progn
-		  (combobulate-test-go-to-marker 5)
-		  (combobulate-drag-up)
-		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@5~after].py")))))
+	       (combobulate-test-go-to-marker 5)
+	       (combobulate-drag-up)
+	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@5~after].py")))
 
 
 (ert-deftest combobulate-test-python-combobulate-drag-up--python-string-4 ()
@@ -1568,11 +1599,9 @@
 		 (:language python :mode python-ts-mode :fixture "fixtures/sibling/python-string.py")
 	       :tags
 	       '(combobulate python python-ts-mode combobulate-drag-up)
-	       (should-error
-		(progn
-		  (combobulate-test-go-to-marker 3)
-		  (combobulate-drag-up)
-		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@3~after].py")))))
+	       (combobulate-test-go-to-marker 3)
+	       (combobulate-drag-up)
+	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/python-string.py[@3~after].py")))
 
 
 (ert-deftest combobulate-test-python-combobulate-drag-up--python-string-2 ()
@@ -1741,9 +1770,11 @@
 		 (:language go :mode go-ts-mode :fixture "fixtures/sibling/switch.go")
 	       :tags
 	       '(combobulate go go-ts-mode combobulate-drag-up)
-	       (combobulate-test-go-to-marker 1)
-	       (combobulate-drag-up)
-	       (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/switch.go[@1~after].go")))
+	       (should-error
+		(progn
+		  (combobulate-test-go-to-marker 1)
+		  (combobulate-drag-up)
+		  (combobulate-compare-action-with-fixture-delta "./fixture-deltas/combobulate-drag-up/switch.go[@1~after].go")))))
 
 
 (ert-deftest combobulate-test-go-combobulate-drag-up--type-declaration-2 ()
