@@ -40,8 +40,6 @@
 
 (defvar combobulate-query-ring)
 
-(declare-function combobulate--mc-place-nodes "combobulate-contrib")
-(declare-function combobulate--mc-edit-nodes "combobulate-contrib")
 (declare-function combobulate-envelope-expand-instructions "combobulate-envelope")
 (declare-function combobulate-display-draw-node-tree "combobulate-display")
 (declare-function combobulate-query-build-nested "combobulate-query")
@@ -189,10 +187,12 @@
                     (add-marker (combobulate--refactor-mark-field
                                  pt tag (or text (symbol-name tag))
                                  transformer-fn)))
+                  (toggle-field (pt tag)
+                    (combobulate--refactor-toggle-field pt tag))
                   (update-field (tag text)
                     (seq-filter
                      (lambda (ov) (let ((actions (overlay-get ov 'combobulate-refactor-action)))
-                                    (combobulate--refactor-update-field ov tag text)))
+                               (combobulate--refactor-update-field ov tag text)))
                      (alist-get ,--session combobulate-refactor--active-sessions)))
                   (mark-point (&optional pt)
                     (add-marker (combobulate--refactor-mark-position (or pt (point)))))
@@ -220,8 +220,6 @@
                              (format "Uncommitted changes in session `%s'" ,--session))
                    (combobulate-refactor-delete-session ,--session))))
            (t (rollback) (signal (car err) (cdr err))))))))
-
-
 (defun combobulate-tally-nodes (nodes &optional skip-label)
   "Groups NODES into labels (if any) and their types and tallies them.
 
@@ -243,191 +241,6 @@ first; followed by the node type of each grouped label."
                              (combobulate-group-nodes nodes #'combobulate-pretty-print-node-type))
                      "; "))
     "zero"))
-
-(defun combobulate--edit-node-determine-action (arg)
-  "Determine which action ARG should map to."
-  (cond ((equal arg '(4)) 'after)
-        ((equal arg '(16)) 'mark)
-        (t 'before)))
-
-(defun combobulate-edit-query (arg)
-  "Edit clusters of nodes by query.
-
-Uses the head of the ring `combobulate-query-ring' as the
-query. If the ring is empty, then throw an error.
-
-By default, point is placed at the start of each match. When
-called with one prefix argument, place point at the end of the
-matches. With two prefix arguments, mark the node instead."
-  (interactive "P")
-  (combobulate-query-ring--execute
-   "Edit nodes matching this query?"
-   "Placed cursors"
-   (lambda (matches _query)
-     (combobulate--mc-place-nodes matches (combobulate--edit-node-determine-action arg)))))
-
-(defun combobulate-edit-node-siblings-dwim (arg)
-  "Edit all siblings of the current node.
-
-Combobulate will use its definition of siblings as per
-\\[combobulate-navigate-next] and
-\\[combobulate-navigate-previous]."
-  (interactive "P")
-  (with-navigation-nodes (:procedures (combobulate-read procedures-sibling))
-    (let ((node (combobulate--get-nearest-navigable-node)))
-      (combobulate--mc-edit-nodes (combobulate-nav-get-siblings node)
-                                  (combobulate--edit-node-determine-action arg)
-                                  (or (car-safe (combobulate-nav-get-parents node t))
-                                      node)))))
-
-(defun combobulate-edit-cluster-dwim (arg)
-  "Precisely edit targeted clusters of nodes.
-
-This looks for clusters of nodes to edit in
-`procedures-edit'.
-
-If you specify a prefix ARG, then the points are placed at the
-end of each edited node."
-  (interactive "P")
-  (with-navigation-nodes (:procedures (combobulate-read procedures-edit))
-    (if-let ((node (combobulate--get-nearest-navigable-node)))
-        (combobulate-edit-cluster
-         node
-         (combobulate--edit-node-determine-action arg))
-      (error "Cannot find any editable clusters here"))))
-
-
-(defun combobulate-edit-node-type-dwim (arg)
-  "Edit nodes of the same type by node locus.
-
-This looks for nodes of any type found in
-`combobulate-navigable-nodes'."
-  (interactive "P")
-  (with-navigation-nodes (:procedures (combobulate-read procedures-default))
-    (if-let ((node (combobulate--get-nearest-navigable-node)))
-        (combobulate-edit-identical-nodes
-         node (combobulate--edit-node-determine-action arg)
-         (lambda (tree-node) (and (equal (combobulate-node-type node)
-                                         (combobulate-node-type tree-node))
-                                  (equal (combobulate-node-field-name node)
-                                         (combobulate-node-field-name tree-node)))))
-      (error "Cannot find any editable nodes here"))))
-
-(defun combobulate-edit-node-by-text-dwim (arg)
-  "Edit nodes with the same text by node locus.
-
-This looks for nodes of of any type found in
-`combobulate-navigable-nodes' that have the same text as
-the node at point."
-  (interactive "P")
-  (if-let ((node (combobulate-node-at-point nil t)))
-      (combobulate-edit-identical-nodes
-       node (combobulate--edit-node-determine-action arg)
-       (lambda (tree-node) (equal (combobulate-node-text tree-node)
-                                  (combobulate-node-text node))))
-    (error "Cannot find any editable nodes here")))
-
-(defun combobulate-edit-identical-nodes (node action &optional match-fn)
-  "Edit nodes identical to NODE if they match MATCH-FN.
-
-The locus of editable nodes is determined by NODE's parents and
-is selectable.
-
-MATCH-FN takes one argument, a node, and should return non-nil if it is
-a match."
-  (let ((matches)
-        ;; default to 1 "match" as there's no point in creating
-        ;; multiple cursors when there's just one match
-        (ct 1)
-        (grouped-matches))
-    (dolist (start-node (combobulate-get-parents node))
-      (let ((known-ranges (make-hash-table :test #'equal :size 1024)))
-        (setq matches (flatten-tree (combobulate-induce-sparse-tree
-                                     start-node
-                                     (lambda (tree-node)
-                                       (prog1
-                                           (and (funcall match-fn tree-node)
-                                                (not (gethash (combobulate-node-range tree-node) known-ranges nil)))
-                                         (puthash (combobulate-node-range tree-node) t known-ranges)))))))
-      ;; this catches parent nodes that do not add more, new, nodes to
-      ;; the editing locus by filtering them out.
-      (when (> (length matches) ct)
-        (setq ct (length matches))
-        (push (cons start-node matches) grouped-matches)))
-    (combobulate-refactor ()
-      (let* ((chosen-node (combobulate-proxy-node-to-real-node
-                           (combobulate-proffer-choices
-                            (reverse (mapcar 'car grouped-matches))
-                            (lambda-slots (current-node refactor-id)
-                              (combobulate-refactor (:id refactor-id)
-                                (rollback)
-                                (mark-node-highlighted current-node)
-                                (princ (format "Editing %s in %s%s\n"
-                                               (combobulate-pretty-print-node-type current-node)
-                                               (combobulate-proxy-node-to-real-node current-node)
-                                               (and (combobulate-node-field-name current-node)
-                                                    (format " (%s)"
-                                                            (combobulate-node-field-name current-node)))))
-                                ;; rollback the outer
-                                ;; `combobulate-refactor' call so
-                                ;; the node cursors we place below
-                                ;; are properly erased.
-                                ;; place a fake cursor at every
-                                ;; node to indicate where the
-                                ;; matching nodes are.
-                                (mapc #'mark-node-cursor
-                                      (cdr (assoc (combobulate-proxy-node-to-real-node node)
-                                                  grouped-matches)))
-                                ;; indicate the locus of editing
-                                ;; by highlighting the entire node
-                                ;; boundary.
-                                (mark-node-highlighted current-node)))
-                            :unique-only nil
-                            :prompt-description
-                            (format "Edit %s in"
-                                    (propertize (combobulate-pretty-print-node-type node)
-                                                'face 'combobulate-tree-branch-face)))))
-             (matches (cdr (assoc chosen-node grouped-matches))))
-        (rollback)
-        (combobulate--mc-edit-nodes matches action chosen-node)))))
-
-(defun combobulate-edit-nodes (placement-nodes)
-  "Edit PLACEMENT-NODES.
-
-PLACEMENT-NODES is a list of cons cells. The car of each cell is
-the action, or the place to put the point or fake cursor. The cdr
-is the node itself.
-
-The action can be one of the following:
-
-- `before': place the point before the node.
-- `after': place the point after the node.
-- `mark': mark the node."
-  (let ((matches (combobulate--mc-place-nodes placement-nodes)))
-    (cond ((= (length matches) 0)
-           (combobulate-message "There are zero nodes available to edit."))
-          (t (combobulate-message
-              (concat "Editing " (combobulate-tally-nodes matches t)))))))
-
-
-(defun combobulate-edit-cluster (node action)
-  "Edit CLUSTER of nodes at, or around, NODE."
-  (pcase-let (((cl-struct combobulate-procedure-result
-                          (selected-nodes selected-nodes)
-                          (parent-node parent-node))
-               (or (car-safe (combobulate-procedure-start node))
-                   (error "No cluster to edit."))))
-    (combobulate--mc-edit-nodes
-     ;; Remove `@discard' matches.
-     (mapcar 'cdr (seq-remove
-                   ;; remove `@discard' matches. Tree-sitter does not
-                   ;; return tags with `@', but Combobulate query
-                   ;; search does.
-                   (lambda (m) (or (equal (car m) '@discard)
-                                   (equal (car m) 'discard)))
-                   selected-nodes))
-     action
-     parent-node)))
 
 (defun combobulate-splice-parent (&optional arg)
   "Vanishes the node at point and attempts to preserve its children."
@@ -1054,7 +867,10 @@ accepts or cancels the proffer. "
                             (substitute-command-keys
                              (format "%s %s`%s': `%s' or \\`S-TAB' to cycle%s; \\`C-g' quits; rest accepts.%s"
                                      display-indicator
-                                     (concat prompt-description " ")
+                                     (concat (cond ((stringp prompt-description) prompt-description)
+                                                   ((functionp prompt-description) (funcall prompt-description proffer-action))
+                                                   (t ""))
+                                             " ")
                                      ;; (propertize " → " 'face 'shadow)
                                      (propertize (combobulate-pretty-print-node current-node) 'face
                                                  'combobulate-tree-highlighted-node-face)
@@ -1147,8 +963,8 @@ accepts or cancels the proffer. "
                           ;; handle numeric selection `1' to `9'
                           ((and (pred (numberp))
                                 (pred (lambda (n) (and (>= n 1)
-                                                       (<= n 9)
-                                                       (<= n (length proxy-nodes)))))
+                                                  (<= n 9)
+                                                  (<= n (length proxy-nodes)))))
                                 n)
                            (refactor-action switch-action)
                            (setq index (1- n))
@@ -1476,11 +1292,11 @@ Each member of PARTITIONS must be one of:
              ;; searching because no applicable sibling procedure was
              ;; found.
              (lambda (n) (or disable-check
-                             (and (combobulate-node-parent n)
-                                  (or (member (combobulate-node-parent n) valid-parents)
-                                      (member n valid-parents))
-                                  (not (equal (combobulate-node-parent n) (car valid-parents)))
-                                  (combobulate-node-before-node-p n source-node))))
+                        (and (combobulate-node-parent n)
+                             (or (member (combobulate-node-parent n) valid-parents)
+                                 (member n valid-parents))
+                             (not (equal (combobulate-node-parent n) (car valid-parents)))
+                             (combobulate-node-before-node-p n source-node))))
              all-parents))
       (cl-flet ((action-function (action)
                   (with-slots (current-node refactor-id index proxy-nodes) action
@@ -1780,23 +1596,34 @@ If BEFORE is non-nil, then the label is placed (using the special
       (overlay-put ov 'face 'diff-changed))
     ov))
 
+(defun combobulate--refactor--get-field (pt tag)
+  "Return the field overlay at PT, if any."
+  (seq-find (lambda (ov) (combobulate--refactor-field-has-tag-p ov tag 'field)) (overlays-at pt)))
+
 (defun combobulate--refactor-mark-field (pt tag text &optional transformer-fn)
   ;; check if there is already a field overlay at this position with `tag' at `pt':
-  (if-let (ov (seq-find (lambda (ov)
-                          (combobulate--refactor-field-has-tag-p ov tag 'field))
-                        (overlays-at pt)))
+  (if-let (ov (combobulate--refactor--get-field pt tag))
       ov
     (let ((ov (make-overlay pt pt nil t nil)))
       ;; args 2 and 3 refer to respectively `tag' and the default value.
       (overlay-put ov 'combobulate-refactor-actions `((field ,tag ,text)))
       (overlay-put ov 'face 'combobulate-refactor-field-face)
       (overlay-put ov 'combobulate-refactor-field-transformer-fn transformer-fn)
-      (combobulate--refactor-set-field ov text (symbol-name tag))
+      (overlay-put ov 'combobulate-refactor-field-original-text text)
+      (overlay-put ov 'combobulate-refactor-field-enabled t)
+      (combobulate--refactor-set-field ov text (or text (symbol-name tag)))
       ov)))
+
+(defun combobulate--refactor-toggle-field (pt tag)
+  (when-let ((ov (combobulate--refactor--get-field pt tag)))
+    (overlay-put ov 'combobulate-refactor-field-enabled
+                 (not (overlay-get ov 'combobulate-refactor-field-enabled)))
+    (overlay-put ov 'face (if (overlay-get ov 'combobulate-refactor-field-enabled)
+                              'combobulate-refactor-field-face
+                            'combobulate-refactor-disabled-field-face))))
 
 (defun combobulate--refactor-mark-cursor (pt)
   (let ((ov (make-overlay pt (1+ pt) nil t nil)))
-    ;; args 2 and 3 refer to respectively `tag' and the default value.
     (overlay-put ov 'combobulate-refactor-actions `((cursor)))
     (overlay-put ov 'face 'combobulate-refactor-cursor-face)
     ov))
@@ -1856,6 +1683,3 @@ If BEFORE is non-nil, then the label is placed (using the special
 
 (provide 'combobulate-manipulation)
 ;;; combobulate-manipulation.el ends here
-
-
-

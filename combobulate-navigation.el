@@ -214,13 +214,17 @@ If NODE-ONLY is non-nil then only the node texts are returned"
 
 Linear siblings are nodes that are at the same level in the
 syntax tree."
-  ;; rewind to the first node
-  (let ((siblings) (ref-node node) (start-node))
-    (while (setq ref-node (combobulate-node-prev-sibling ref-node anonymous))
-      (setq start-node ref-node))
-    (cl-do ((node start-node (combobulate-node-next-sibling node anonymous)))
-        ((null node) siblings)
-      (push node siblings))
+  (let ((siblings '()))
+    (cl-do ((prev (combobulate-node-prev-sibling node anonymous)
+                  (combobulate-node-prev-sibling prev anonymous)))
+        ((null prev))
+      (push prev siblings))
+    (setq siblings (nreverse siblings))
+    (push node siblings)
+    (cl-do ((next (combobulate-node-next-sibling node anonymous)
+                  (combobulate-node-next-sibling next anonymous)))
+        ((null next))
+      (push next siblings))
     (nreverse siblings)))
 
 (defun combobulate--get-nearest-navigable-node ()
@@ -356,7 +360,8 @@ start."
   (when node
     (combobulate-move-to-node
      node (or end (and auto (= (combobulate-node-start node) (point)))))
-    (combobulate--flash-node node)
+    (unless (combobulate-proxy-node-p node)
+      (combobulate--flash-node node))
     node))
 
 (defun combobulate--make-navigation-query ()
@@ -935,6 +940,100 @@ DIRECTION must be `forward' or `backward'."
   "Navigate forward to the end of the defun."
   (combobulate-nav-to-defun 'forward))
 
+(defun combobulate--navigate-scan (text direction)
+  "Scan for TEXT in DIRECTION."
+  (save-excursion
+    (let ((text (rx symbol-start (literal text) symbol-end)))
+      (if (funcall
+           (if (eq direction 'next) #'re-search-forward #'re-search-backward)
+           text
+           nil
+           t
+           ;; Skip ahead of the text at point if it matches TEXT. We want
+           ;; the match before/after that.
+           (if (and (eq direction 'next) (looking-at-p text)) 2 1))
+          (combobulate-proxy-node-make-from-range (match-beginning 0) (match-end 0) "Scan" text)
+        (error "No more matches for `%s'" text)))))
+
+(defvar combobulate--navigate-term nil
+  "The search term used by `combobulate--navigate-seqeunce'.")
+
+(defun combobulate--navigate-sequence (direction)
+  "Navigate to the next node in the sequence in DIRECTION.
+
+If there is no node in the sequence in DIRECTION, raise an error.
+
+If the command is re-issued after an error is raised, the search will
+continue by scanning in DIRECTION for any other contextual node (as per
+`context-nodes') that has the same text."
+  (let* ((thing (thing-at-point 'symbol))
+         (node (combobulate--get-nearest-navigable-node))
+         (node-text (or (with-navigation-nodes (:procedures (combobulate-read context-nodes))
+                          ;; we must explicitly get the nearest
+                          ;; navigable node again as we have changed
+                          ;; the context.
+                          (combobulate-node-text (combobulate--get-nearest-navigable-node)))
+                        ;; fall back to the thing at point if this
+                        ;; function is triggered in a comment, string,
+                        ;; or other ex-node context.
+                        thing))
+         (seq-nodes (ignore-errors (combobulate-procedure-start-matches node))))
+    (cond
+     ;; This is the 'fallback scan' in case there are no sequences
+     ;; available at/near point. It can only trigger if:
+     ;;
+     ;; 1. There are no sequences available at/near point.  2. The
+     ;; last command was a sequence scan, indicating continuity (i.e.,
+     ;; the user has requested multiple scans in a row and we should
+     ;; just proceed accordingly.)
+     ((or (null seq-nodes)
+          (eq last-command 'combobulate-navigation-sequence-scan))
+      (unless thing (error "No valid symbol at point"))
+      (setq this-command 'combobulate-navigation-sequence-scan)
+      (combobulate--navigate-scan
+       ;; Use the last term if we have one, otherwise use the symbol
+       ;; at point.
+       (if (not (eq last-command 'combobulate-navigation-sequence-scan))
+           (progn (push-mark)
+                  (setq combobulate--navigate-term thing))
+         combobulate--navigate-term)
+       direction))
+     ;; This is the 'normal' case where we have sequences available
+     ;; at/near point.
+     ((member this-command '(combobulate-navigate-sequence-next
+                             combobulate-navigate-sequence-previous))
+      ;; Find the following node in the direction we are told to look
+      ;; and return it if there is such a node.
+      (if-let (following-node (if (eq direction 'next)
+                                  (seq-find #'combobulate-node-after-point-p seq-nodes)
+                                (seq-find #'combobulate-node-before-point-p (reverse seq-nodes))))
+          following-node
+        ;; Hack this/last command so it thinks we're doing a sequence
+        ;; scan. This is probably the simplest way of passing state
+        ;; between commands without having to build an elaborate state
+        ;; machine and ensure it does not go out of sync if myriad of
+        ;; conditions cause it to do so.
+        (setq last-command 'combobulate-navigation-sequence-scan
+              this-command 'combobulate-navigation-sequence-scan)
+        ;; Capture the current symbol at point.
+        (setq combobulate--navigate-term thing)
+        ;; Throw an error so the user knows there is no node that
+        ;; follows in DIRECTION.
+        (user-error
+         (format "%s (repeat command to scan for `%s')"
+                 (if (eq direction 'next)
+                     "No next node in sequence"
+                   "No previous node in sequence")
+                 node-text)))))))
+
+(defun combobulate-nav-sequence-next ()
+  "Navigate to the next node in the sequence."
+  (combobulate--navigate-sequence 'next))
+
+(defun combobulate-nav-sequence-previous ()
+  "Navigate to the next node in the sequence."
+  (combobulate--navigate-sequence 'previous))
+
 (defun combobulate--navigate-up ()
   (with-navigation-nodes (:procedures (combobulate-read procedures-hierarchy))
     (combobulate-nav-get-parent
@@ -1029,6 +1128,26 @@ DIRECTION must be `forward' or `backward'."
   (interactive "^p")
   (with-argument-repetition arg
     (combobulate-visual-move-to-node (combobulate--navigate-logical-previous))))
+
+(defun combobulate-navigate-sequence-next (&optional arg)
+  "Move to the next sequence node ARG times"
+  (interactive "^p")
+  (with-argument-repetition arg
+    (combobulate-visual-move-to-node (combobulate--navigate-sequence-next) nil nil)))
+
+(defun combobulate--navigate-sequence-next ()
+  (with-navigation-nodes (:procedures (combobulate-read procedures-sequence))
+    (combobulate-nav-sequence-next)))
+
+(defun combobulate-navigate-sequence-previous (&optional arg)
+  "Move to the previous sequence node ARG times"
+  (interactive "^p")
+  (with-argument-repetition arg
+    (combobulate-visual-move-to-node (combobulate--navigate-sequence-previous))))
+
+(defun combobulate--navigate-sequence-previous ()
+  (with-navigation-nodes (:procedures (combobulate-read procedures-sequence))
+    (combobulate-nav-sequence-previous)))
 
 (defun combobulate--navigate-end-of-defun ()
   (with-navigation-nodes (:procedures (combobulate-read procedures-defun))

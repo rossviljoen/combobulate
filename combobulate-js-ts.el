@@ -77,7 +77,6 @@
          "nested_identifier" "property_identifier"
          "shorthand_property_identifier_pattern"
          "string_fragment" "number"))
-
       ;; NOTE This is subject to change
       (envelope-procedure-shorthand-alist
        '((valid-jsx-expression
@@ -237,65 +236,15 @@
          ((call_expression function: (member_expression object: (identifier) @name @hl.serene
                                                         property: (property_identifier)
                                                         (:match "^console$" @name))))))
-      (procedures-edit
-       '(;; edit the keys or values in an object
-         (:activation-nodes
-          ((:nodes
-            ;; being javascript, you can put half the damn language
-            ;; in the value part of an object pair
-            ((rule-rx "expression"))
-            :has-fields "value"
-            :has-ancestor ((irule "pair"))))
-          :selector (:choose
-                     parent
-                     :match-query
-                     (:query (object (pair (_) (_) @match)+) :engine combobulate)))
-         (:activation-nodes
-          ((:nodes
-            ((rule "pair"))
-            :has-fields "key"
-            :has-ancestor ((irule "pair"))))
-          :selector (:choose
-                     parent
-                     :match-query
-                     (:query (object (pair (_) @match)+) :engine combobulate)))
-         (:activation-nodes
-          ((:nodes
-            ("named_imports" "formal_parameters" "array" "object_type" "arguments" "object_pattern")
-            :has-parent t))
-          :selector (:choose node :match-query (:query ((_) (_)+ @match)
-                                                       :engine combobulate)))
-         (:activation-nodes
-          ((:nodes ("variable_declarator")))
-          :selector (:match-query (:query ((_) name: (array_pattern (_)+  @match))
-                                          :engine combobulate)))
-         (:activation-nodes
-          ((:nodes
-            ("jsx_attribute")
-            :has-parent ("jsx_opening_element" "jsx_self_closing_element")))
-          :selector (:match-query (:query ((_) (jsx_attribute)+ @match)
-                                          :engine combobulate)))
-         ;; sibling-level editing
-         (:activation-nodes
-          ((:nodes
-            ("jsx_self_closing_element" "jsx_expression" "jsx_element" "jsx_fragment")
-            :position at))
-          :selector (:choose
-                     node
-                     :match-siblings (:discard-rules
-                                      ("jsx_opening_element" "jsx_closing_element")
-                                      :anonymous nil)))
-         ;; editing an element's opening/closing tag
-         (:activation-nodes
-          ((:nodes
-            ("jsx_opening_element" "jsx_closing_element")
-            :has-parent ("jsx_element" "jsx_fragment" "jsx_self_closing_element")))
-          :selector (:choose
-                     parent
-                     :match-query (:query (jsx_element (jsx_opening_element (identifier) @match)
-                                                       (jsx_closing_element (identifier) @match))
-                                          :engine combobulate)))))
-
+      (procedures-sequence
+       '((:activation-nodes
+          ((:nodes ("identifier") :position any :has-ancestor ("jsx_element")))
+          :selector (:choose parent :match-query
+                             (:query
+                              (_ (jsx_opening_element (identifier) @match)
+                                 (jsx_closing_element (identifier) @match))
+                              :engine combobulate)))))
+      (procedures-edit nil)
       (procedures-sexp
        '((:activation-nodes ((:nodes ("jsx_element"
                                       "regex"
@@ -315,12 +264,31 @@
                                       "jsx_attribute"
                                       "jsx_fragment"
                                       "jsx_self_closing_element"))))))
-
       (procedures-defun
        '((:activation-nodes ((:nodes ("arrow_function" "function_declaration" "class_declaration" "method_definition"))))))
 
       (procedures-sibling
-       `(;; for lists, arrays, objects, etc.
+       `((:activation-nodes
+          ((:nodes
+            ((rule "pair"))
+            :has-fields "key"
+            :has-ancestor ((irule "pair"))))
+          :selector (:choose
+                     parent
+                     :match-query
+                     (:query (object (pair (_) @match)+) :engine combobulate)))
+         (:activation-nodes
+          ((:nodes
+            ;; being javascript, you can put half the damn language
+            ;; in the value part of an object pair
+            ((rule-rx "expression"))
+            :has-fields "value"
+            :has-ancestor ((irule "pair"))))
+          :selector (:choose
+                     parent
+                     :match-query
+                     (:query (object (pair (_) (_) @match)+) :engine combobulate)))
+         ;; for lists, arrays, objects, etc.
          (:activation-nodes
           ((:nodes
             ("import_specifier")
@@ -454,7 +422,7 @@ and `attr-expression' for expression-based attributes."
       (attribute-envelope-default
        "Default envelope name to apply to a JSX attribute.
 
-Only applied if `combobulate-js-ts-attribute-envelope-alist' does
+Only applied if `attribute-envelope-alist' does
 not contain a valid JSX attribute alist entry.
 
 If this value is `nil', then no envelope is applied.
@@ -477,7 +445,7 @@ expression object attribute."
       (enable-attribute-envelopes
        "Pick a sensible value for a JSX attribute when you type `='.
 
-This uses `combobulate-js-ts-attribute-envelope-alist' to
+This uses `attribute-envelope-alist' to
 determine the attribute and the corresponding envelope to insert."
        t
        :type 'boolean))))

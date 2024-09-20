@@ -68,17 +68,19 @@
     (define-key map (kbd "b") #'combobulate-xref-find-query-buffer-references)
     map))
 
-(declare-function combobulate-edit-cluster-dwim "combobulate-manipulation")
-(declare-function combobulate-edit-node-type-dwim "combobulate-manipulation")
-(declare-function combobulate-edit-node-by-text-dwim "combobulate-manipulation")
-(declare-function combobulate-edit-node-siblings-dwim "combobulate-manipulation")
+(declare-function combobulate-cursor-edit-sequence-dwim "combobulate-cursor")
+(declare-function combobulate-cursor-edit-node-type-dwim "combobulate-cursor")
+(declare-function combobulate-cursor-edit-node-by-text-dwim "combobulate-cursor")
+(declare-function combobulate-cursor-edit-node-siblings-dwim "combobulate-cursor")
+(declare-function combobulate-cursor-edit-query "combobulate-cursor")
 
-(defvar combobulate-edit-key-map
+(defvar combobulate-cursor-edit-key-map
   (let ((map (make-sparse-keymap "Combobulate Edit")))
-    (define-key map (kbd "c") #'combobulate-edit-cluster-dwim)
-    (define-key map (kbd "t") #'combobulate-edit-node-type-dwim)
-    (define-key map (kbd "x") #'combobulate-edit-node-by-text-dwim)
-    (define-key map (kbd "s") #'combobulate-edit-node-siblings-dwim)
+    (define-key map (kbd "c") #'combobulate-cursor-edit-sequence-dwim)
+    (define-key map (kbd "t") #'combobulate-cursor-edit-node-type-dwim)
+    (define-key map (kbd "x") #'combobulate-cursor-edit-node-by-text-dwim)
+    (define-key map (kbd "s") #'combobulate-cursor-edit-node-siblings-dwim)
+    (define-key map (kbd "q") #'combobulate-cursor-edit-query)
     map))
 
 (declare-function combobulate-avy-jump "combobulate-contrib")
@@ -90,7 +92,7 @@
     (define-key map (kbd "j") #'combobulate-avy-jump)
     (define-key map (kbd "o") #'combobulate)
     (define-key map (kbd "c") #'combobulate-clone-node-dwim)
-    (define-key map (kbd "t") combobulate-edit-key-map)
+    (define-key map (kbd "t") combobulate-cursor-edit-key-map)
     (define-key map (kbd "x") combobulate-xref-key-map)
     (define-key map (kbd "h") combobulate-highlight-key-map)
     (define-key map (kbd "B") combobulate-query-key-map)
@@ -140,6 +142,8 @@
     (define-key map (kbd "M-e") #'combobulate-navigate-logical-next)
     (define-key map (kbd "M-h") #'combobulate-mark-node-dwim)
     (define-key map (kbd "M-k") #'combobulate-kill-node-dwim)
+    (define-key map (kbd "M-n") #'combobulate-navigate-sequence-next)
+    (define-key map (kbd "M-p") #'combobulate-navigate-sequence-previous)
     map))
 
 
@@ -186,11 +190,17 @@ This variable is almost always auto-populated by Combobulate when
 a set of procedures are activated, and should only be let-bound
 or set with `with-navigation-nodes'."
      nil)
+    (procedures-sequence
+     "Procedures that control navigation to the next/previous sequence.
+
+This variable is used by some Combobulate commands that navigate
+sequences of nodes, regardless of their relative positions in the tree."
+     nil)
     (procedures-edit
      "Procedures used to mark clusters of editable nodes.
 
 This is used by some Combobulate commands that edit nodes. Most
-commonly multi-cursor editing."
+commonly cursor editing."
      nil)
     (default-procedures
      "List of active procedures used by Combobulate's procedure system.
@@ -377,14 +387,13 @@ The primary use for these is through `define-combobulate-language'.")
 
 If CHECK is non-nil raise an assertion if the variable with that
 SHORTHAND for that LANGUAGE is unbound."
-  (let ((var (intern (format "combobulate-%s-%s"
-                             (or language (combobulate-primary-language))
-                             shorthand))))
-    (when (and (not (boundp var)) check)
-      (cl-assert (boundp var) nil
-                 "Variable `%s' does not exist in language `%s' with shorthand `%s'"
-                 var language shorthand))
-    var))
+  (when-let (lang (or language (combobulate-primary-language)))
+    (let ((var (intern (format "combobulate-%s-%s" lang shorthand))))
+      (when (and (not (boundp var)) check)
+        (cl-assert (boundp var) nil
+                   "Variable `%s' does not exist in language `%s' with shorthand `%s'"
+                   var lang shorthand))
+      var)))
 
 ;; Allow for `setf' to be used with `combobulate-get'.
 (gv-define-setter combobulate-get (value var) `(set (combobulate-get ,var) ,value))
@@ -440,7 +449,7 @@ A complete list of known shorthands are found in
   "Get the registered language for a major mode MM.
 
 Returns a list of the form `(LANGUAGE MAJOR-MODES MINOR-MODE-FN)'."
-  (seq-find (pcase-lambda ((and v `(,language ,major-modes ,minor-mode-fn)))
+  (seq-find (pcase-lambda (`(_ ,major-modes _))
               (member mm major-modes))
             combobulate-registered-languages-alist))
 
@@ -455,7 +464,7 @@ enable Combobulate."
   ;; in `combobulate-registered-languages-alist'.
   ;;
   (when-let (match (combobulate-get-registered-language major-mode))
-    (pcase-let ((`(,language ,major-modes ,minor-mode-fn) match))
+    (pcase-let ((`(,language _ ,minor-mode-fn) match))
       ;; Only error out if RAISE-IF-MISSING is non-nil. The expected
       ;; behaviour is that Combobulate may get activated in major
       ;; modes for which no grammar exists. Raising an error

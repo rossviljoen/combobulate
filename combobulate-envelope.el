@@ -61,25 +61,41 @@ manually.")
   :doc "Keymap for envelope prompts."
   :parent minibuffer-local-map)
 
-(defun combobulate-envelope-prompt (prompt default-value &optional buffer update-fn)
+(defun combobulate-envelope-prompt (prompt default-value &optional buffer update-fn initial-contents map)
   "Insert text into fields using the minibuffer with PROMPT and DEFAULT-VALUE.
 
-BUFFER if optionally the buffer (and its associated window) to
-use. If it is nil, then `current-buffer' is used."
+BUFFER if optionally the buffer (and its associated window) to use. If
+it is nil, then `current-buffer' is used.
+
+UPDATE-FN is a function that is called after `post-command-hook' is
+triggered in the minibuffer. It is passed the current minibuffer
+contents.
+
+INITIAL-CONTENTS is the initial contents of the minibuffer prompt.
+
+MAP is the keymap to use for the minibuffer. It defaults to
+`combobulate-envelope-prompt-map'."
   (let ((win (when (eq (window-buffer) (or buffer (current-buffer)))
                (selected-window))))
     (minibuffer-with-setup-hook
         (lambda ()
           (setq combobulate-envelope-prompt-window win)
+          ;; Required for things that set intangible properties on
+          ;; text.
+          (cursor-intangible-mode 1)
+          ;; If INITIAL-CONTENTS is not empty then the point is placed
+          ;; at the end of the text, which is probably not what people
+          ;; want?
+          (beginning-of-line)
           ;; not presently used.
           ;; (add-hook 'minibuffer-exit-hook #'combobulate-envelope-prompt-exit nil t)
           (add-hook 'post-command-hook update-fn nil t))
       (read-from-minibuffer
        (format-prompt
-        prompt
+        (concat combobulate-sigil " " prompt)
         (or default-value (car combobulate-envelope-prompt-history) ""))
-       nil
-       combobulate-envelope-prompt-map
+       initial-contents
+       (or map combobulate-envelope-prompt-map)
        nil
        'combobulate-envelope-prompt-history
        (car combobulate-envelope-prompt-history)
@@ -1013,7 +1029,14 @@ See `combobulate-apply-envelope' for more information."
             (when (and envelope-nodes
                        split-node
                        (not (seq-find #'combobulate-point-at-node-p envelope-nodes)))
-              (let* ((source-node (car (seq-sort #'combobulate-node-larger-than-node-p envelope-nodes)))
+              (let* ((source-node (or
+                                   (let ((point-node (combobulate-node-at-point)))
+                                     (seq-find (lambda (parent-node)
+                                                 (> (combobulate-node-end parent-node)
+                                                    (combobulate-node-end point-node)))
+                                               (combobulate-get-parents point-node)))
+                                   (car (seq-sort #'combobulate-node-larger-than-node-p
+                                                  envelope-nodes))))
                      (split-node (combobulate-proxy-node-make-from-range
                                   (point)
                                   (combobulate-node-end source-node)

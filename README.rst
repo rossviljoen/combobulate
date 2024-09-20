@@ -33,7 +33,7 @@ If you want a guided tour and a deeper understanding of why Combobulate is built
 - `Combobulate: Intuitive, Structured Navigation with Tree-Sitter <https://www.masteringemacs.org/article/combobulate-intuitive-structured-navigation-treesitter>`__, which talks about the challenges around building sensible and intuitive navigation.
 - `Combobulate: Editing and Searching with the new Query Builder <https://www.masteringemacs.org/article/combobulate-editing-searching-new-query-builder>`__, demonstrating how Combobulate's query builder and search works.
 - `Combobulate: Interactive Node Editing with Tree-Sitter <https://www.masteringemacs.org/article/combobulate-interactive-node-editing-treesitter>`__, where I talk about the *carousel* interface and how it makes it possible to preview complex edits to your buffer before accepting them.
-
+- `Combobulate: Bulk Editing Tree-Sitter Nodes with Multiple Cursors <https://www.masteringemacs.org/article/combobulate-bulk-editing-treesitter-nodes-multiple-cursors>`__, where I explain how bulk editing with tools like Combobulate's *field editor* and *multiple cursors* work.
 
 What does Combobulate do exactly?
 ---------------------------------
@@ -58,7 +58,7 @@ Much like the popular expand regions package, Combobulate can also expand the re
 
 .. image:: docs/mc-edit-1.gif
 
-Combobulate can also place cursors (using the optional *multiple cursors* package) at syntactically important points in your code, like: dictionary elements; function arguments; or attributes in JSX elements.
+Combobulate can also place cursors (using the optional *multiple cursors* package, or using the builtin *field editor*) at syntactically important points in your code, like: dictionary elements; function arguments; or attributes in JSX elements.
 
 .. image:: docs/clone-dwim.gif
 
@@ -132,6 +132,8 @@ Recent Changes / What's New
 
 Here's a quick summary of recently added and changed features:
 
+- Combobulate can now move between *sequences*, such as the start and end tags in HTML/JSX. The sequence keys are bound to ``M-n`` and ``M-p``.
+- Combobulate now has its own bulk editing system called the *field editor*. Multiple cursors is also still supported. Customize ``combobulate-cursor-tool`` to change the tool you want to use.
 - `The carousel interface <https://www.masteringemacs.org/article/combobulate-interactive-node-editing-treesitter>`__ is now used in most edit commands.
 - Splicing is now more advanced than ever, and works everywhere.
 
